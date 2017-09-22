@@ -5,10 +5,23 @@ Tinyfly
 tinyfly is an open-source in-memory database project implementing a networked, in-memory key-value store
 
 ### Run
+
+##### 1 
 ```output
-[gap@localhost tinyfly]$ PORT=17878  node ./tinyfly.js 
-tinyfly is opened server on 17878
+git clone https://github.com/YaroslavGaponov/tinyfly
+cd tinyfly
+PORT=17878  node ./tinyfly.js 
 ```
+
+##### 2
+```output
+curl -sS https://raw.githubusercontent.com/YaroslavGaponov/tinyfly/master/tinyfly.js | PORT=17878 node
+```
+
+#### 3
+````output
+
+````
 
 ## Rest Api
 
