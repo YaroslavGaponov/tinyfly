@@ -68,18 +68,23 @@ class Storage {
         }
         return -1;
     }
-    load(offset) {
+    getKey(offset) {
         const flag = this._buffer.readUInt8(offset);
         if (flag === BLOCK.FREE) {
             return null;
         }
         const size = this._buffer.readUInt32BE(offset + 1);
         const pair = this._buffer.slice(offset + 5, offset + 5 + size).toString().split('\0');
-        return {
-            key: pair[0],
-            value: pair[1]
-        };
-
+        return pair[0];
+    }
+    getValue(offset) {
+        const flag = this._buffer.readUInt8(offset);
+        if (flag === BLOCK.FREE) {
+            return null;
+        }
+        const size = this._buffer.readUInt32BE(offset + 1);
+        const pair = this._buffer.slice(offset + 5, offset + 5 + size).toString().split('\0');
+        return pair[1];        
     }
     delete(offset) {
         const flag = this._buffer.readUInt8(offset);
@@ -255,7 +260,7 @@ class NoSql {
         if (id === -1) {
             return;
         }
-        return this._storage.load(id);
+        return this._storage.getValue(id);
     }
     delete(key) {
         const id = this._index.delete(key);
@@ -274,33 +279,29 @@ const nosql = new NoSql(
 );
 
 const net = require('net');
-const HTTP_CODES = require('http').STATUS_CODES;
 const PROTOCOL = 'HTTP/1.1';
 const PORT = process.env.PORT || 17878;
+const LN = '\r\n';
 
 net.createServer(
     (socket) => {
         const reply = (code, body) => {
-            socket.end(PROTOCOL + ' ' + code +  ' ' + HTTP_CODES[code] + ' \r\n\r\n' + (body ? body : ''));
+            socket.end(PROTOCOL + ' ' + code + LN + LN + (body || ''));
         };
         socket.on('data', (chunk) => {
-            const [header, body] = chunk.toString().split('\r\n\r\n');
-            const [method, path] = header.split('\r\n')[0].split(' ');
+            const [header, body] = chunk.toString().split(LN + LN);
+            const [method, path] = header.split(LN)[0].split(' ');
             const key = path.slice(1);
             switch(method) {
                 case 'HEAD': 
                     return reply(nosql.has(key) ? 200 : 404);
                 
                 case 'GET': 
-                    const pair = nosql.get(key);
-                    return pair ? 
-                        reply(200, pair.value) :
-                        reply(404)
-                    ;
+                    const value = nosql.get(key);
+                    return reply(value ? 200 : 404, value);
+
                 case 'PUT':
                     nosql.delete(key);
-                    return reply(nosql.set(key, body) ? 200 : 500);
-
                 case 'POST':
                     return reply(nosql.set(key, body) ? 200 : 500);
 
