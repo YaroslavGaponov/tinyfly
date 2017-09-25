@@ -162,15 +162,10 @@ class Index {
 
         let pred_offset = EOC;
         let curr_offset = this._table[index];
+        
         for (;;) {
-            let _addr = Index.getNodeBlockOffset(curr_offset);
-            const curr_hash = this._nodes[_addr];
-            const curr_id = this._nodes[_addr + 1];
-            const curr_next = this._nodes[_addr + 2];
-            if (hash === curr_hash && check(curr_id)) {
-                return false;            
-            } else if (curr_offset === EOC || hash > curr_hash) {
-                const new_offset = this._bitset.fetch();
+            if (curr_offset === EOC) {
+                let new_offset = this._bitset.fetch();
                 let _addr = Index.getNodeBlockOffset(new_offset); 
                 this._nodes[_addr] = hash;
                 this._nodes[_addr + 1] = id;
@@ -182,10 +177,34 @@ class Index {
                     this._nodes[_addr + 2] = new_offset;
                 }
                 return true;
-            } else {
-                pred_offset = curr_offset;
-                curr_offset = curr_next;
             }
+
+            let _addr = Index.getNodeBlockOffset(curr_offset);
+            const curr_hash = this._nodes[_addr];
+            const curr_id = this._nodes[_addr + 1];
+            const curr_next = this._nodes[_addr + 2];
+
+            if (hash === curr_hash && check(curr_id)) {
+                return false;
+            }
+
+            if (hash > curr_hash) {
+                let new_offset = this._bitset.fetch();
+                let _addr = Index.getNodeBlockOffset(new_offset); 
+                this._nodes[_addr] = hash;
+                this._nodes[_addr + 1] = id;
+                this._nodes[_addr + 2] = EOC;
+                if (pred_offset === EOC) {
+                    this._table[index] = new_offset;
+                } else {
+                    let _addr = Index.getNodeBlockOffset(pred_offset);
+                    this._nodes[_addr + 2] = new_offset;
+                }
+                return true;
+            }
+
+            pred_offset = curr_offset;
+            curr_offset = curr_next;
         }
 
     }
