@@ -288,6 +288,72 @@ class NoSql {
 
 }
 
+const self_tests_run = () => {
+    process.stdout.write('self-testing...\n');
+    
+    const assert = require('assert');
+    
+    process.stdout.write('\t - class BitSet ....');
+    const bitSet = new BitSet(new Uint32Array(Buffer.alloc(100)));
+    bitSet.clear();
+    for(let i=0; i<100; i++) {    
+        assert.equal(i, bitSet.fetch());
+    }
+    for(let i=0; i<100; i+=2) {    
+        bitSet.free(i);
+    }
+    for(let i=0; i<50; i++) {
+        assert.equal(i<<1, bitSet.fetch());
+    }
+    process.stdout.write('passed\n');
+    
+    process.stdout.write('\t - class Storage ....');
+    const storage = new Storage(Buffer.alloc(5000));
+    storage.clear();
+    const ids = [];
+    for(let i=0; i<100; i++) {
+        ids.push(storage.save('key'+i, 'value'+i));
+    }
+    for(let i=0; i<100; i++) {
+        assert.equal('key'+i, storage.getKey(ids[i]));
+        assert.equal('value'+i, storage.getValue(ids[i]));
+    }
+    for(let i=0; i<100; i+=2) {
+        assert(storage.delete(ids[i]));
+    }    
+    for(let i=0; i<100; i++) {
+        if ((i&1) === 0) {
+            assert.equal(null, storage.getKey(ids[i]));
+            assert.equal(null, storage.getValue(ids[i]));
+        } else {
+            assert.equal('key'+i, storage.getKey(ids[i]));
+            assert.equal('value'+i, storage.getValue(ids[i]));            
+        }
+    }
+    process.stdout.write('passed\n');
+    
+    process.stdout.write('\t - class Index ....');
+    const index = new Index(Buffer.alloc(0xffff));
+    index.clear();
+    for(let i=0; i<100; i++) {
+        assert(index.set(i, 'key'+i, () => {return true}));
+    }
+    for(let i=0; i<100; i++) {
+        assert.equal(i, (index.get('key'+i,() => {return true})));
+    }
+    for(let i=0; i<100; i+=2) {
+        assert.equal(i, index.delete('key'+i,() => {return true}));
+    }
+    for(let i=0; i<100; i++) {
+        assert.equal((i&1)===0 ? -1 : i, (index.get('key'+i,() => {return true})));
+    }    
+    process.stdout.write('passed\n');
+
+    process.stdout.write('done\n');
+}
+
+self_tests_run();
+
 const space = Buffer.alloc(0xffffff);
 const nosql = new NoSql(
     new Index(space.slice(0, 0xffff)).clear(),
