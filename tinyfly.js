@@ -307,7 +307,13 @@ net.createServer(
         socket.on('data', (chunk) => {
             const [header, body] = chunk.toString().split(LN + LN);
             const [method, path] = header.split(LN)[0].split(' ');            
-            const key = path.startsWith('/') ? path.slice(1) : path;
+            const parts = path.slice(1).split('?');
+            const key = parts[0];
+            const args = parts[1]
+                .split('&')
+                .map(pair => {return pair.split('=');})
+                .reduce((a,i) => {a[i[0]] = i[1]; return a;}, {})
+            ;
             switch(method) {
                 case 'HEAD': 
                     return reply(nosql.has(key) ? 200 : 404);
@@ -318,6 +324,8 @@ net.createServer(
 
                 case 'PUT':
                     nosql.delete(key);
+                    return reply(nosql.set(key, body) ? 200 : 500);
+
                 case 'POST':
                     return reply(nosql.set(key, body) ? 200 : 500);
 
