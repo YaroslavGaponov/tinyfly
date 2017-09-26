@@ -5,8 +5,15 @@
 
 'use strict';
 
+const assert = require('assert');
+
 class BitSet {
     constructor(array) {
+
+        assert(array);
+        assert(array instanceof Uint32Array);
+        assert(array.length > 0);
+
         this._array = array;
     }
     clear() {
@@ -26,6 +33,11 @@ class BitSet {
         return -1;
     }
     free(id) {
+
+        assert.fail(isNaN(id));
+        assert(id >= 0);
+        assert(id < (this._array.length<<5));
+
         const base = id >> 5;
         const offset = id & 0x1f;
         this._array[base] &= ~(1 << offset);
@@ -40,6 +52,11 @@ const BLOCK =  Object.freeze({
 
 class Storage {
     constructor(buffer) {
+
+        assert(buffer);
+        assert(buffer instanceof Buffer);
+        assert(buffer.length > 0);
+
         this._buffer = buffer;
     }
     clear() {
@@ -51,8 +68,12 @@ class Storage {
         const data = new Buffer(key + '\0' + value);
         let offset = 0;
         for (;;) {
+            assert(offset >= 0);
+            assert(offset < this._buffer.length);
             const flag = this._buffer.readUInt8(offset);
+            assert(flag === BLOCK.FREE || flag === BLOCK.BUSY);
             const size = this._buffer.readUInt32BE(offset + 1);
+            assert(size > 0);
             if (flag === BLOCK.FREE && size >= data.length) {
                 this._buffer.writeUInt8(BLOCK.BUSY, offset);
                 this._buffer.writeInt32BE(data.length, offset + 1);
@@ -69,12 +90,17 @@ class Storage {
         return -1;
     }
     getKey(offset) {
+        assert(offset >= 0);
+        assert(offset < this._buffer.length);
         const flag = this._buffer.readUInt8(offset);
+        assert(flag === BLOCK.FREE || flag === BLOCK.BUSY);
         if (flag === BLOCK.FREE) {
             return null;
         }
         const size = this._buffer.readUInt32BE(offset + 1);
+        assert(size > 0);
         const pair = this._buffer.slice(offset + 5, offset + 5 + size).toString().split('\0');
+        
         return pair[0];
     }
     getValue(offset) {
@@ -133,11 +159,15 @@ class Index {
         return this;
     }
     get(key, check) {
+        assert(key);
+    
         const hash = Index.calc_hash(key);
         const index = hash % this._table.length;
 
         let curr_offset = this._table[index];
         for (;;) {
+            assert(curr_offset >= 0);
+            assert(curr_offset < this._table.length);
             if (curr_offset === EOC) {
                 return -1;
             }
@@ -154,9 +184,15 @@ class Index {
         }        
     }
     has(key, check) {
+        assert(key);
+    
         return this.get(key, check) !== -1;
     }
     set(id, key, check) {
+        assert.fail(isNaN(id));
+        assert(id >= 0);
+        assert(key);
+
         const hash = Index.calc_hash(key);
         const index = hash % this._table.length;
 
@@ -208,7 +244,9 @@ class Index {
         }
 
     }
-    delete(key, check) {        
+    delete(key, check) {
+        assert(key);
+
         const hash = Index.calc_hash(key);
         const index = hash % this._table.length;
     
@@ -242,10 +280,14 @@ class Index {
 
 class NoSql {
     constructor(index, storage) {
+        assert(index && index instanceof Index);
+        assert(storage && storage instanceof Storage);
+
         this._index = index;
         this._storage = storage;
     }
     has(key) {
+        assert(key);
         return this._index.has(key,
             (id) => {
                 return this._storage.getKey(id) === key;
@@ -253,6 +295,7 @@ class NoSql {
         );
     }
     set(key, value) {
+        assert(key);
         const id = this._storage.save(key, value);
         if (id === -1) {
             return false;
@@ -264,6 +307,7 @@ class NoSql {
         );
     }
     get(key) {
+        assert(key);
         const id = this._index.get(key,
             (id) => {
                 return this._storage.getKey(id) === key;
@@ -275,6 +319,7 @@ class NoSql {
         return this._storage.getValue(id);
     }
     delete(key) {
+        assert(key);
         const id = this._index.delete(key,
             (id) => {
                 return this._storage.getKey(id) === key;
