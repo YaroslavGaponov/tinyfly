@@ -8,15 +8,23 @@
 const assert = require('assert');
 
 const debuggify = (object) => {
-    var wrapper = Object.create(object);
+    const wrapper = Object.create(object);
     for (let name of Object.getOwnPropertyNames(Object.getPrototypeOf(object))) {
           let method = object[name];
-          if (method instanceof Function && name !== 'constructor' && name[0] !== '_') {
+          if (method instanceof Function && name !== 'constructor') {
             wrapper[name] = function() {                
-                let result = object[name].apply(object, arguments);
-                console.log('DEBUG:', object.constructor.name + '.' + name, '(' + Array.prototype.slice.call(arguments).map(p => {return p instanceof Function ? '<function>' : p;}).toString() + ') => ', result);
+                let result = method.apply(object, arguments);
+                console.log(
+                    'DEBUG:',
+                    object.constructor.name + '.' + name,
+                    '(' +
+                        Array.prototype.slice.call(arguments)
+                            .map(p => {return p instanceof Function ? '<function>' : p;})
+                                .toString() +
+                    ') => ', result
+                );
                 return result;
-            }
+            };
           }
     }
     return wrapper;
