@@ -10,7 +10,7 @@ const assert = require('assert');
 const debuggify = (object) => {
     const wrapper = Object.create(object);
     for (let name of Object.getOwnPropertyNames(Object.getPrototypeOf(object))) {
-          let method = object[name];
+          const method = object[name];
           if (method instanceof Function && name !== 'constructor') {
             wrapper[name] = function() {                
                 const result = method.apply(object, arguments);
@@ -230,24 +230,12 @@ class Index {
                 return hash;
             }
             for (let i = 0; i < s.length; i++) {
-                let code = s.charCodeAt(i);
+                const code = s.charCodeAt(i);
                 hash = ((hash << 5) - hash) + code;
                 hash = hash & hash;
             }
             return hash >>> 0;            
         };
-    }
-    static calc_hash(s) {
-        let hash = 0;
-        if (s.length === 0) {
-            return hash;
-        }
-        for (let i = 0; i < s.length; i++) {            
-            let code = s.charCodeAt(i);
-            hash = ((hash << 5) - hash) + code;
-            hash = hash & hash;
-        }
-        return hash >>> 0;
     }
     static getNodeBlockOffset(index) {
         return index + (index<<1);
@@ -266,7 +254,7 @@ class Index {
             return -1;
         }
 
-        const hash = Index.calc_hash(key);
+        const hash = Index.get_calc_hash_func(199)(key);
         const index = hash % this._table.length;
 
         let curr_offset = this._table[index];
@@ -292,7 +280,7 @@ class Index {
         assert(key);
 
         if (!this._bloom.has(key)) {
-            return -1;
+            return false;
         }
 
         return this.get(key, check) !== -1;
@@ -303,7 +291,7 @@ class Index {
         assert(id >= 0);
         assert(key);
 
-        const hash = Index.calc_hash(key);
+        const hash = Index.get_calc_hash_func(199)(key);
         const index = hash % this._table.length;
 
         let pred_offset = EOC;
@@ -363,7 +351,7 @@ class Index {
             return -1;
         }
 
-        const hash = Index.calc_hash(key);
+        const hash = Index.get_calc_hash_func(199)(key);
         const index = hash % this._table.length;
     
         let pred_offset = EOC;
