@@ -129,6 +129,39 @@ class BloomFilter {
     }
 }
 
+class Cache {
+    constructor(size, hfunc) {
+        this._map = new Array(size);
+        this._hfunc = hfunc;
+    }
+    has(key) {
+        const index = this._hfunc(key) % this._map.length;
+        return !!this._map[index] && (this._map[index].key === key);
+    }
+    set(key, value) {
+        const index = this._hfunc(key) % this._map.length;
+        this._map[index] = {
+            key: key,
+            value: value
+        };
+        return true;
+    }
+    get(key) {
+        const index = this._hfunc(key) % this._map.length;
+        const element = this._map[index];
+        return element.key === key ? element.value : null;
+    }
+    remove(key) {
+        const index = this._hfunc(key) % this._map.length;
+        const element = this._map[index];
+        if (element.key === key) {
+            delete this._map[index];
+            return true;    
+        }
+        return false;
+    }
+}
+
 const BLOCK =  Object.freeze({
     FREE: 0,
     BUSY: 1
@@ -385,15 +418,21 @@ class Index {
 }
 
 class NoSql {
-    constructor(index, storage) {
+    constructor(index, storage, cache) {
         assert(index && index instanceof Index);
         assert(storage && storage instanceof Storage);
 
-        this._index = index;
-        this._storage = storage;
+        this._index = debuggify(index);
+        this._storage = debuggify(storage);
+        this._cache = debuggify(cache);
+    
+        return debuggify(this);
     }
     has(key) {
         assert(key);
+        if (this._cache.has(key)) {
+            return true;
+        }
         return this._index.has(key,
             (id) => {
                 return this._storage.getKey(id) === key;
@@ -402,6 +441,7 @@ class NoSql {
     }
     set(key, value) {
         assert(key);
+        this._cache.set(key, value);
         const id = this._storage.save(key, value);
         if (id === -1) {
             return false;
@@ -414,6 +454,9 @@ class NoSql {
     }
     get(key) {
         assert(key);
+        if (this._cache.has(key)) {
+            return this._cache.get(key);
+        }
         const id = this._index.get(key,
             (id) => {
                 return this._storage.getKey(id) === key;
@@ -426,6 +469,7 @@ class NoSql {
     }
     delete(key) {
         assert(key);
+        this._cache.remove(key);
         const id = this._index.delete(key,
             (id) => {
                 return this._storage.getKey(id) === key;
@@ -440,12 +484,13 @@ class NoSql {
 }
 
 const space = Buffer.alloc(0xffffff);
-const nosql = debuggify(
+const nosql = 
     new NoSql(
-        debuggify(new Index(space.slice(0, 0xffff)).clear()),
-        debuggify(new Storage(space.slice(0xffff)).clear())
+        new Index(space.slice(0, 0xffff)).clear(),
+        new Storage(space.slice(0xffff)).clear(),
+        new Cache(500, Index.get_calc_hash_func(731))
     )
-);
+;
 
 const net = require('net');
 const PROTOCOL = 'HTTP/1.1';
