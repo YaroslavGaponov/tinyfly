@@ -13,7 +13,7 @@ const debuggify = (object) => {
           let method = object[name];
           if (method instanceof Function && name !== 'constructor') {
             wrapper[name] = function() {                
-                let result = method.apply(object, arguments);
+                const result = method.apply(object, arguments);
                 console.log(
                     'DEBUG:',
                     object.constructor.name + '.' + name,
