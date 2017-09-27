@@ -7,11 +7,26 @@
 
 const assert = require('assert');
 
-class BitSet {
+const debuggify = (object) => {
+    var wrapper = Object.create(object);
+    for (let name of Object.getOwnPropertyNames(Object.getPrototypeOf(object))) {
+          let method = object[name];
+          if (method instanceof Function && name !== 'constructor' && name[0] !== '_') {
+            wrapper[name] = function() {                
+                let result = object[name].apply(object, arguments);
+                console.log('DEBUG:', object.constructor.name + '.' + name, '(' + Array.prototype.slice.call(arguments).map(p => {return p instanceof Function ? '<function>' : p;}).toString() + ') => ', result);
+                return result;
+            }
+          }
+    }
+    return wrapper;
+};
+
+class BitMap {
     constructor(array) {
 
         assert(array);
-        assert(array instanceof Uint32Array);
+        assert(array instanceof Buffer);
         assert(array.length > 0);
 
         this._array = array;
@@ -23,10 +38,10 @@ class BitSet {
     }
     fetch() {
         for (let base = 0; base < this._array.length; base++) {
-            for (let offset = 0; offset < 32; offset++) {
+            for (let offset = 0; offset < 8; offset++) {
                 if (((this._array[base] >> offset) & 1) === 0) {
                     this._array[base] |= 1 << offset;
-                    return (base << 5) + offset;
+                    return (base << 3) | offset;
                 }
             }
         }
@@ -34,15 +49,76 @@ class BitSet {
     }
     free(id) {
 
-        assert.fail(isNaN(id));
+        assert(!isNaN(id));
         assert(id >= 0);
-        assert(id < (this._array.length<<5));
+        assert(id < (this._array.length<<3));
 
-        const base = id >> 5;
-        const offset = id & 0x1f;
+        const base = id >> 3;
+        const offset = id & 7;
         this._array[base] &= ~(1 << offset);
     }
 
+}
+
+class BloomFilter {
+    constructor(buffer, hfunc, seeds) {
+        this._buffer = buffer;
+        this._hfuncs = seeds.map(
+            seed => {
+                return hfunc(seed);
+            }
+        );
+    }
+    clear() {
+        for(let i=0; i<this._buffer.length; i++) {
+            this._buffer[i] = 0;
+        }
+        return this;
+    }
+    add(key) {
+        this._hfuncs
+            .map(hfunc => {
+                    return hfunc(key) % this._buffer.length;
+                }
+            )
+            .forEach(id => {
+                    const base = id >> 3;
+                    const offset = id & 7;
+                    this._buffer[base] |= 1 << offset;
+                }
+            )
+        ;
+    }
+    remove(key) {
+        this._hfuncs
+            .map(hfunc => {
+                    return hfunc(key) % this._buffer.length;
+                }
+            )
+            .forEach(id => {
+                    const base = id >> 3;
+                    const offset = id & 7;
+                    this._buffer[base] &= ~(1 << offset);
+                }
+            )
+        ;        
+    }
+    has(key) {
+        return this._hfuncs
+            .map(hfunc => {
+                    return hfunc(key) % this._buffer.length;
+                }
+            )
+            .map(id => {
+                    const base = id >> 3;
+                    const offset = id & 7;
+                    return ((this._buffer[base] >> offset) & 1) === 1;
+                }
+            )
+            .filter(Boolean)
+            .length === this._hfuncs.length
+        ;
+    }
 }
 
 const BLOCK =  Object.freeze({
@@ -129,19 +205,36 @@ class Index {
     constructor(buffer) {
         const length = buffer.length >> 3;
         const nodes_length = (length >> 1) + (length >> 2); // 75%
-        const bitset_length = nodes_length >> 5;
-        const htable_length = length - nodes_length - bitset_length;
+        const bitmap_length = nodes_length >> 5;
+        const bloom_length = length >> 5;
+        const htable_length = length - nodes_length - bitmap_length - bloom_length;
+        
 
-        this._bitset = new BitSet(new Uint32Array(buffer.slice(0, bitset_length)));
-        this._table = new Uint32Array(buffer.slice(bitset_length, bitset_length + htable_length));
-        this._nodes = new Uint32Array(buffer.slice(bitset_length + htable_length));
+        this._bitmap = debuggify(new BitMap(buffer.slice(0, bitmap_length)));
+        this._bloom = debuggify(new BloomFilter(buffer.slice(bitmap_length, bitmap_length + bloom_length), Index.get_calc_hash_func, [1087, 1697, 2039, 2843, 3041]));
+        this._table = new Uint32Array(buffer.slice(bitmap_length + bloom_length, bitmap_length + bloom_length + htable_length));
+        this._nodes = new Uint32Array(buffer.slice(bitmap_length + bloom_length + htable_length));
+    }
+    static get_calc_hash_func(seed) {
+        return (s) => {
+            let hash = seed;
+            if (s.length === 0) {
+                return hash;
+            }
+            for (let i = 0; i < s.length; i++) {
+                let code = s.charCodeAt(i);
+                hash = ((hash << 5) - hash) + code;
+                hash = hash & hash;
+            }
+            return hash >>> 0;            
+        };
     }
     static calc_hash(s) {
         let hash = 0;
         if (s.length === 0) {
             return hash;
         }
-        for (let i = 0; i < s.length; i++) {
+        for (let i = 0; i < s.length; i++) {            
             let code = s.charCodeAt(i);
             hash = ((hash << 5) - hash) + code;
             hash = hash & hash;
@@ -152,7 +245,8 @@ class Index {
         return index + (index<<1);
     }
     clear() {
-        this._bitset.clear();
+        this._bitmap.clear();
+        this._bloom.clear();
         for (let i = 0; i < this._table.length; i++) {
             this._table[i] = EOC;
         }
@@ -160,7 +254,10 @@ class Index {
     }
     get(key, check) {
         assert(key);
-    
+        if (!this._bloom.has(key)) {
+            return -1;
+        }
+
         const hash = Index.calc_hash(key);
         const index = hash % this._table.length;
 
@@ -185,11 +282,16 @@ class Index {
     }
     has(key, check) {
         assert(key);
-    
+
+        if (!this._bloom.has(key)) {
+            return -1;
+        }
+
         return this.get(key, check) !== -1;
     }
     set(id, key, check) {
-        assert.fail(isNaN(id));
+
+        assert(!isNaN(id));
         assert(id >= 0);
         assert(key);
 
@@ -201,7 +303,7 @@ class Index {
         
         for (;;) {
             if (curr_offset === EOC) {
-                let new_offset = this._bitset.fetch();
+                let new_offset = this._bitmap.fetch();
                 let _addr = Index.getNodeBlockOffset(new_offset); 
                 this._nodes[_addr] = hash;
                 this._nodes[_addr + 1] = id;
@@ -212,6 +314,7 @@ class Index {
                     let _addr = Index.getNodeBlockOffset(pred_offset);
                     this._nodes[_addr + 2] = new_offset;
                 }
+                this._bloom.add(key);
                 return true;
             }
 
@@ -225,7 +328,7 @@ class Index {
             }
 
             if (hash > curr_hash) {
-                let new_offset = this._bitset.fetch();
+                let new_offset = this._bitmap.fetch();
                 let _addr = Index.getNodeBlockOffset(new_offset); 
                 this._nodes[_addr] = hash;
                 this._nodes[_addr + 1] = id;
@@ -236,6 +339,7 @@ class Index {
                     let _addr = Index.getNodeBlockOffset(pred_offset);
                     this._nodes[_addr + 2] = new_offset;
                 }
+                this._bloom.add(key);
                 return true;
             }
 
@@ -246,6 +350,10 @@ class Index {
     }
     delete(key, check) {
         assert(key);
+
+        if (!this._bloom.has(key)) {
+            return -1;
+        }
 
         const hash = Index.calc_hash(key);
         const index = hash % this._table.length;
@@ -267,6 +375,8 @@ class Index {
                     let _addr = Index.geNodeBlockOffset(pred_offset);
                     this._nodes[_addr + 2] = curr_next;
                 }
+                this._bitmap.free(curr_offset);
+                this._bloom.remove(key);
                 return curr_id;
             } else if (hash > curr_hash) {
                 return -1;
@@ -334,9 +444,11 @@ class NoSql {
 }
 
 const space = Buffer.alloc(0xffffff);
-const nosql = new NoSql(
-    new Index(space.slice(0, 0xffff)).clear(),
-    new Storage(space.slice(0xffff)).clear()
+const nosql = debuggify(
+    new NoSql(
+        debuggify(new Index(space.slice(0, 0xffff)).clear()),
+        debuggify(new Storage(space.slice(0xffff)).clear())
+    )
 );
 
 const net = require('net');
@@ -352,13 +464,7 @@ net.createServer(
         socket.on('data', (chunk) => {
             const [header, body] = chunk.toString().split(LN + LN);
             const [method, path] = header.split(LN)[0].split(' ');            
-            const parts = path.slice(1).split('?');
-            const key = parts[0];
-            const args = parts[1]
-                .split('&')
-                .map(pair => {return pair.split('=');})
-                .reduce((a,i) => {a[i[0]] = i[1]; return a;}, {})
-            ;
+            const key = path.slice(1).split('?')[0];
             switch(method) {
                 case 'HEAD': 
                     return reply(nosql.has(key) ? 200 : 404);
