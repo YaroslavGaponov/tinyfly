@@ -206,7 +206,7 @@ class Storage {
             assert(flag === BLOCK.FREE || flag === BLOCK.BUSY);
             const size = this._buffer.readUInt32BE(offset + 1);
             assert(size > 0);
-            if (flag === BLOCK.FREE && size >= data.length) {
+            if (flag === BLOCK.FREE && (size >= data.length)) {
                 this._buffer.writeUInt8(BLOCK.BUSY, offset);
                 this._buffer.writeInt32BE(data.length, offset + 1);
                 data.copy(this._buffer, offset + 5);
@@ -214,8 +214,8 @@ class Storage {
                 if (other_size > 0) {
                     this._buffer.writeUInt8(BLOCK.FREE, offset + 5 + data.length);
                     this._buffer.writeInt32BE(other_size, offset + 5 + data.length + 1);
-                    return offset;
                 }
+                return offset;
             }
             offset += size + 5;
         }
