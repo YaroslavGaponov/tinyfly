@@ -5,6 +5,8 @@
 
 'use strict';
 
+const DEBUG = true;
+
 const assert = require('assert');
 
 class Utils {
@@ -23,10 +25,13 @@ class Utils {
         };
     }
     static debuggify(object) {
+        if (!DEBUG) {
+            return object;
+        }
         const wrapper = Object.create(object);
         for (let name of Object.getOwnPropertyNames(Object.getPrototypeOf(object))) {
               const method = object[name];
-              if (method instanceof Function && name !== 'constructor') {
+              if (method instanceof Function && name !== 'constructor' && !name.startsWith('_')) {
                 wrapper[name] = function() {                
                     const result = method.apply(object, arguments);
                     console.log(
