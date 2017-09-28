@@ -7,7 +7,15 @@
 
 const DEBUG = true;
 
+const TOTAL_MEMORY_SIZE = 0xffffff;
+const INDEX_SIZE = 0xffff;
+const CACHE_SIZE = 500;
+const PORT = process.env.PORT || 17878;
+
+const SPACE = Buffer.alloc(TOTAL_MEMORY_SIZE);
+
 const assert = require('assert');
+const net = require('net');
 
 class Utils {
     static getHashFunc(seed) {
@@ -86,6 +94,8 @@ class BitMap {
         const base = id >> 3;
         const offset = id & 7;
         this._array[base] &= ~(1 << offset);
+        
+        return true;
     }
 
 }
@@ -489,48 +499,95 @@ class NoSql {
 
 }
 
-const space = Buffer.alloc(0xffffff);
 const nosql = 
     new NoSql(
-        new Index(space.slice(0, 0xffff)).clear(),
-        new Storage(space.slice(0xffff)).clear(),
-        new Cache(500, Utils.getHashFunc(731))
+        new Index(SPACE.slice(0, INDEX_SIZE)).clear(),
+        new Storage(SPACE.slice(INDEX_SIZE)).clear(),
+        new Cache(CACHE_SIZE, Utils.getHashFunc(731))
     )
 ;
 
-const net = require('net');
 const PROTOCOL = 'HTTP/1.1';
-const PORT = process.env.PORT || 17878;
 const LN = '\r\n';
+
+const METHOD = Object.freeze({
+    HEAD: 'HEAD',
+    GET: 'GET',
+    PUT: 'PUT',
+    POST: 'POST',
+    DELETE: 'DELETE'
+});
+
+const HTTP_CODE = Object.freeze({
+    200: 'OK',
+    404: 'Not Found',
+    500: 'Internal Server Error',
+    501: 'Not Implemented'
+});
+
+const REPLY = (socket) => {
+    return (code, body = '') => {
+        return socket.end(PROTOCOL + ' ' + code + ' ' + HTTP_CODE[code] + LN + LN + body);
+    };
+};
 
 net.createServer(
     (socket) => {
-        const reply = (code, body) => {
-            socket.end(PROTOCOL + ' ' + code + LN + LN + (body || ''));
-        };
+        const done = REPLY(socket);
         socket.on('data', (chunk) => {
+
             const [header, body] = chunk.toString().split(LN + LN);
             const [method, path] = header.split(LN)[0].split(' ');            
             const key = path.slice(1).split('?')[0];
+
+            assert(method in METHOD);
+            assert(key);
+
             switch(method) {
-                case 'HEAD': 
-                    return reply(nosql.has(key) ? 200 : 404);
-                
-                case 'GET': 
-                    const value = nosql.get(key);
-                    return reply(value ? 200 : 404, value);
-
-                case 'PUT':
-                    nosql.delete(key);
-                    return reply(nosql.set(key, body) ? 200 : 500);
-
-                case 'POST':
-                    return reply(nosql.set(key, body) ? 200 : 500);
-
-                case 'DELETE': 
-                    return reply(nosql.delete(key) ? 200 : 404);                
+                case METHOD.HEAD: {
+                    if (nosql.has(key)) {
+                        return done(200);
+                    } else {
+                        return done(404);
+                    }
+                }
+                case METHOD.GET: {
+                    if (nosql.has(key)) {                        
+                        return done(200, nosql.get(key));
+                    } else {                        
+                        return done(404);
+                    }
+                }
+                case METHOD.PUT: {
+                    if (nosql.has(key)) {
+                        if (!nosql.delete(key)) {
+                            return done(500);
+                        }
+                    }
+                    if (nosql.set(key, body)) {
+                        return done(200);
+                    } else {
+                        return done(500);
+                    }
+                }
+                case METHOD.POST: {
+                    if (nosql.set(key, body)) {
+                        return done(200);
+                    } else {
+                        return done(500);
+                    }
+                }
+                case METHOD.DELETE: {
+                    if (nosql.delete(key)) {
+                        return done(200);
+                    } else {
+                        return done(404);
+                    }
+                }
+                default: {
+                    return done(501);
+                }
             }
-            return reply(501);
         });
     })
     .listen(PORT, () => {
