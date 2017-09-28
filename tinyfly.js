@@ -7,28 +7,45 @@
 
 const assert = require('assert');
 
-const debuggify = (object) => {
-    const wrapper = Object.create(object);
-    for (let name of Object.getOwnPropertyNames(Object.getPrototypeOf(object))) {
-          const method = object[name];
-          if (method instanceof Function && name !== 'constructor') {
-            wrapper[name] = function() {                
-                const result = method.apply(object, arguments);
-                console.log(
-                    'DEBUG:',
-                    object.constructor.name + '.' + name,
-                    '(' +
-                        Array.prototype.slice.call(arguments)
-                            .map(p => {return p instanceof Function ? '<function>' : p;})
-                                .toString() +
-                    ') => ', result
-                );
-                return result;
-            };
-          }
+class Utils {
+    static getHashFunc(seed) {
+        return (s) => {
+            let hash = seed || 0;
+            if (s.length === 0) {
+                return hash;
+            }
+            for (let i = 0; i < s.length; i++) {
+                const code = s.charCodeAt(i);
+                hash = ((hash << 5) - hash) + code;
+                hash = hash & hash;
+            }
+            return hash >>> 0;            
+        };
     }
-    return wrapper;
-};
+    static debuggify(object) {
+        const wrapper = Object.create(object);
+        for (let name of Object.getOwnPropertyNames(Object.getPrototypeOf(object))) {
+              const method = object[name];
+              if (method instanceof Function && name !== 'constructor') {
+                wrapper[name] = function() {                
+                    const result = method.apply(object, arguments);
+                    console.log(
+                        'DEBUG:',
+                        object.constructor.name + '.' + name,
+                        '(' +
+                            Array.prototype.slice.call(arguments)
+                                .map(p => {return p instanceof Function ? '<function>' : p;})
+                                .map(p => {return p instanceof Buffer ? '<buffer>' : p;})
+                                .toString() +
+                        ') => ', result
+                    );
+                    return result;
+                };
+              }
+        }
+        return wrapper;
+    }
+}
 
 class BitMap {
     constructor(array) {
@@ -131,31 +148,29 @@ class BloomFilter {
 
 class Cache {
     constructor(size, hfunc) {
-        this._map = new Array(size);
+        this._keys = new Array(size);
+        this._values = new Array(size);
         this._hfunc = hfunc;
     }
     has(key) {
-        const index = this._hfunc(key) % this._map.length;
-        return !!this._map[index] && (this._map[index].key === key);
+        const index = this._hfunc(key) % this._keys.length;
+        return this._keys[index] === key;
     }
     set(key, value) {
-        const index = this._hfunc(key) % this._map.length;
-        this._map[index] = {
-            key: key,
-            value: value
-        };
+        const index = this._hfunc(key) % this._keys.length;
+        this._keys[index] = key;
+        this._values[index] = value;
         return true;
     }
     get(key) {
-        const index = this._hfunc(key) % this._map.length;
-        const element = this._map[index];
-        return element.key === key ? element.value : null;
+        const index = this._hfunc(key) % this._keys.length;
+        return this._keys[index] === key ? this._values[index] : null;
     }
     remove(key) {
-        const index = this._hfunc(key) % this._map.length;
-        const element = this._map[index];
-        if (element.key === key) {
-            delete this._map[index];
+        const index = this._hfunc(key) % this._keys.length;
+        if (this._keys[index] === key) {
+            this._keys[index] = null;
+            this._values[index] = null;
             return true;    
         }
         return false;
@@ -251,24 +266,10 @@ class Index {
         const htable_length = length - nodes_length - bitmap_length - bloom_length;
         
 
-        this._bitmap = debuggify(new BitMap(buffer.slice(0, bitmap_length)));
-        this._bloom = debuggify(new BloomFilter(buffer.slice(bitmap_length, bitmap_length + bloom_length), Index.get_calc_hash_func, [1087, 1697, 2039, 2843, 3041]));
+        this._bitmap = Utils.debuggify(new BitMap(buffer.slice(0, bitmap_length)));
+        this._bloom = Utils.debuggify(new BloomFilter(buffer.slice(bitmap_length, bitmap_length + bloom_length), Utils.getHashFunc, [1087, 1697, 2039, 2843, 3041]));
         this._table = new Uint32Array(buffer.slice(bitmap_length + bloom_length, bitmap_length + bloom_length + htable_length));
         this._nodes = new Uint32Array(buffer.slice(bitmap_length + bloom_length + htable_length));
-    }
-    static get_calc_hash_func(seed) {
-        return (s) => {
-            let hash = seed;
-            if (s.length === 0) {
-                return hash;
-            }
-            for (let i = 0; i < s.length; i++) {
-                const code = s.charCodeAt(i);
-                hash = ((hash << 5) - hash) + code;
-                hash = hash & hash;
-            }
-            return hash >>> 0;            
-        };
     }
     static getNodeBlockOffset(index) {
         return index + (index<<1);
@@ -287,7 +288,7 @@ class Index {
             return -1;
         }
 
-        const hash = Index.get_calc_hash_func(199)(key);
+        const hash = Utils.getHashFunc(199)(key);
         const index = hash % this._table.length;
 
         let curr_offset = this._table[index];
@@ -324,7 +325,7 @@ class Index {
         assert(id >= 0);
         assert(key);
 
-        const hash = Index.get_calc_hash_func(199)(key);
+        const hash = Utils.getHashFunc(199)(key);
         const index = hash % this._table.length;
 
         let pred_offset = EOC;
@@ -384,7 +385,7 @@ class Index {
             return -1;
         }
 
-        const hash = Index.get_calc_hash_func(199)(key);
+        const hash = Utils.getHashFunc(199)(key);
         const index = hash % this._table.length;
     
         let pred_offset = EOC;
@@ -422,11 +423,11 @@ class NoSql {
         assert(index && index instanceof Index);
         assert(storage && storage instanceof Storage);
 
-        this._index = debuggify(index);
-        this._storage = debuggify(storage);
-        this._cache = debuggify(cache);
+        this._index = Utils.debuggify(index);
+        this._storage = Utils.debuggify(storage);
+        this._cache = Utils.debuggify(cache);
     
-        return debuggify(this);
+        return Utils.debuggify(this);
     }
     has(key) {
         assert(key);
@@ -488,7 +489,7 @@ const nosql =
     new NoSql(
         new Index(space.slice(0, 0xffff)).clear(),
         new Storage(space.slice(0xffff)).clear(),
-        new Cache(500, Index.get_calc_hash_func(731))
+        new Cache(500, Utils.getHashFunc(731))
     )
 ;
 
