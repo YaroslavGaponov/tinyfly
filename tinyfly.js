@@ -591,7 +591,7 @@ net.createServer(
         });
     })
     .listen(PORT, () => {
-        console.log('tinyfly is opened server on', PORT);
+        console.log(`tinyfly is opened server on ${PORT}`);
     })
 ;
 
