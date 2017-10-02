@@ -17,21 +17,9 @@ const SPACE = Buffer.alloc(TOTAL_MEMORY_SIZE);
 const assert = require('assert');
 const net = require('net');
 
+let getHashFunc = null;
+
 class Utils {
-    static getHashFunc(seed) {
-        return (s) => {
-            let hash = seed || 0;            
-            if (s.length === 0) {
-                return hash;
-            }
-            for (let i = 0; i < s.length; i++) {
-                const code = s.charCodeAt(i);
-                hash = ((hash << 5) - hash) + code;
-                hash = hash & hash;
-            }
-            return hash >>> 0;            
-        };
-    }
     static debuggify(object) {
         if (!DEBUG) {
             return object;
@@ -277,7 +265,7 @@ class Index {
         
 
         this._bitmap = Utils.debuggify(new BitMap(buffer.slice(0, bitmap_length)));
-        this._bloom = Utils.debuggify(new BloomFilter(buffer.slice(bitmap_length, bitmap_length + bloom_length), Utils.getHashFunc, [1087, 1697, 2039, 2843, 3041]));
+        this._bloom = Utils.debuggify(new BloomFilter(buffer.slice(bitmap_length, bitmap_length + bloom_length), getHashFunc, [1087, 1697, 2039, 2843, 3041]));
         this._table = new Uint32Array(buffer.slice(bitmap_length + bloom_length, bitmap_length + bloom_length + htable_length));
         this._nodes = new Uint32Array(buffer.slice(bitmap_length + bloom_length + htable_length));
     }
@@ -298,7 +286,7 @@ class Index {
             return -1;
         }
 
-        const hash = Utils.getHashFunc(199)(key);
+        const hash = getHashFunc(199)(key);
         const index = hash % this._table.length;
 
         let curr_offset = this._table[index];
@@ -335,7 +323,7 @@ class Index {
         assert(id >= 0);
         assert(key);
 
-        const hash = Utils.getHashFunc(199)(key);
+        const hash = getHashFunc(199)(key);
         const index = hash % this._table.length;
 
         let pred_offset = EOC;
@@ -395,7 +383,7 @@ class Index {
             return -1;
         }
 
-        const hash = Utils.getHashFunc(199)(key);
+        const hash = getHashFunc(199)(key);
         const index = hash % this._table.length;
     
         let pred_offset = EOC;
@@ -494,13 +482,20 @@ class NoSql {
 
 }
 
-const nosql = 
-    new NoSql(
-        new Index(SPACE.slice(0, INDEX_SIZE)).clear(),
-        new Storage(SPACE.slice(INDEX_SIZE)).clear(),
-        new Cache(CACHE_SIZE, Utils.getHashFunc(731))
-    )
-;
+let nosql = null;
+require('./hash')().then(
+    (fn) => {
+        if (fn) {
+            getHashFunc = fn;
+        }
+        nosql = new NoSql(
+            new Index(SPACE.slice(0, INDEX_SIZE)).clear(),
+            new Storage(SPACE.slice(INDEX_SIZE)).clear(),
+            new Cache(CACHE_SIZE, getHashFunc(731))
+        );        
+    }
+);
+
 
 const PROTOCOL = 'HTTP/1.1';
 const LN = '\r\n';
