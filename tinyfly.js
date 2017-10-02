@@ -144,20 +144,15 @@ class BloomFilter {
         ;        
     }
     has(key) {
-        return this._hfuncs
-            .map(hfunc => {
-                    return hfunc(key) % this._buffer.length;
-                }
-            )
-            .map(id => {
-                    const base = id >> 3;
-                    const offset = id & 7;
-                    return ((this._buffer[base] >> offset) & 1) === 1;
-                }
-            )
-            .filter(Boolean)
-            .length === this._hfuncs.length
-        ;
+        for(let i=0; i<this._hfuncs.length; i++) {
+            const id = this._hfuncs[i](key) % this._buffer.length;
+            const base = id >> 3;
+            const offset = id & 7;
+            if (!((this._buffer[base] >> offset) & 1)) {
+                return false;
+            }
+        }
+        return true;
     }
 }
 
