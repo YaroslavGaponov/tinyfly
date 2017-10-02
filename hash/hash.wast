@@ -38,6 +38,6 @@
         )
       )
       
-      (get_local $result)
+      (i32.shl (get_local $result) (i32.const 0))
     )
 )

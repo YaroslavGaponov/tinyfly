@@ -13,7 +13,7 @@ const hash = 'WebAssembly' in global ?
                         for(let i=0; i<str.length ;i++) {
                             buf[i] = str.charCodeAt(i);
                         }                    
-                        return instance.exports.hash(seed)>>>0;
+                        return instance.exports.hash(seed);
                     };
                 };
            });
