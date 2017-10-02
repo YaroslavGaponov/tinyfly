@@ -1,24 +1,21 @@
 'use strict';
 
-const hash = WebAssembly ?
+const hash = 'WebAssembly' in global ?
     (seed = 0) => {
+        const bytes = require('fs').readFileSync(__dirname + '/hash.wasm');
         return (str) => {
-            return new Promise(
-                resolve => {
-                    WebAssembly
-                       .compile(require('fs').readFileSync(__dirname + '/hash.wasm'))
-                       .then(module => {
-                           return new WebAssembly.Instance(module, {});
-                       })
-                       .then(instance => {
-                            const buf = new Uint8Array(instance.exports.memory.buffer);
-                            for(let i=0; i<str.length ;i++) {
-                                buf[i] = str.charCodeAt(i);
-                            }
-                            return resolve(instance.exports.hash(seed));
-                       });
-                }
-            );
+            return WebAssembly
+               .compile(bytes)
+               .then(module => {
+                   return new WebAssembly.Instance(module, {});
+               })
+               .then(instance => {
+                    const buf = new Uint8Array(instance.exports.memory.buffer);
+                    for(let i=0; i<str.length ;i++) {
+                        buf[i] = str.charCodeAt(i);
+                    }
+                    return instance.exports.hash(seed);
+               });
         };
     }   :
     (seed = 0) => {
@@ -40,6 +37,5 @@ const hash = WebAssembly ?
         };
     }
 ;
-
 
 module.exports = hash;

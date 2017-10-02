@@ -20,7 +20,7 @@ const net = require('net');
 class Utils {
     static getHashFunc(seed) {
         return (s) => {
-            let hash = seed || 0;
+            let hash = seed || 0;            
             if (s.length === 0) {
                 return hash;
             }
@@ -162,21 +162,21 @@ class Cache {
         this._values = new Array(size);
         this._hfunc = hfunc;
     }
-    has(key) {
+     has(key) {        
         const index = this._hfunc(key) % this._keys.length;
         return this._keys[index] === key;
     }
-    set(key, value) {
+     set(key, value) {
         const index = this._hfunc(key) % this._keys.length;
         this._keys[index] = key;
         this._values[index] = value;
         return true;
     }
-    get(key) {
+     get(key) {
         const index = this._hfunc(key) % this._keys.length;
         return this._keys[index] === key ? this._values[index] : null;
     }
-    remove(key) {
+     remove(key) {
         const index = this._hfunc(key) % this._keys.length;
         if (this._keys[index] === key) {
             this._keys[index] = null;

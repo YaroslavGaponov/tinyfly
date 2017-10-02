@@ -10,12 +10,12 @@ tinyfly is an open-source in-memory database project implementing a networked, i
 ```output
 git clone https://github.com/YaroslavGaponov/tinyfly
 cd tinyfly
-PORT=17878 node ./tinyfly.js 
+PORT=17878 node --expose-wasm ./tinyfly.js 
 ```
 
 ##### 2 Simple
 ```output
-curl -sS https://raw.githubusercontent.com/YaroslavGaponov/tinyfly/master/tinyfly.js | PORT=17878 node
+curl -sS https://raw.githubusercontent.com/YaroslavGaponov/tinyfly/master/tinyfly.js | PORT=17878 node --expose-wasm
 ```
 
 #### 3 Docker
