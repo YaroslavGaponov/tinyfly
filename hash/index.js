@@ -1,22 +1,32 @@
 'use strict';
 
+const fs = require('fs');
+
 const hash = 'WebAssembly' in global ?
-    () => {
-        const bytes = require('fs').readFileSync(__dirname + '/hash.wasm');
-        return WebAssembly
-           .compile(bytes)
-           .then(module => { return new WebAssembly.Instance(module, {}); })
-           .then(instance => {
-                return(seed) => {
-                    return (str) => {
-                        const buf = new Uint8Array(instance.exports.memory.buffer);
-                        for(let i=0; i<str.length ;i++) {
-                            buf[i] = str.charCodeAt(i);
-                        }                    
-                        return instance.exports.hash(seed);
-                    };
-                };
-           });
+    () => {        
+        return new Promise(
+            (resolve, reject) => {
+                fs.readFile(__dirname + '/hash.wasm', (err, data) => {
+                    if (err) {
+                        return reject(err);
+                    } else {
+                        return resolve(data);
+                    }
+                });
+            })
+            .then(WebAssembly.compile)
+            .then(module => { return new WebAssembly.Instance(module, {}); })
+            .then(instance => {
+                 return (seed = 0) => {
+                     return (str) => {                    
+                         const buf = new Uint8Array(instance.exports.memory.buffer);
+                         for(let i=0; i<str.length ;i++) {
+                             buf[i] = str.charCodeAt(i);
+                         }                    
+                         return instance.exports.hash(seed) >>> 0;
+                     };
+                 };
+            });
     }   :
     () => {
         return new Promise(() => {

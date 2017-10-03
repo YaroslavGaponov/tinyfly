@@ -16,28 +16,27 @@
       
       (block $break
         (loop $continue
-        
-        
-        (br_if $break (i32.eqz (i32.load8_u (get_local $i))))
-        
-        (set_local $result
-          (i32.add
-            (i32.sub
-                (i32.shl (get_local $result) (i32.const 5))
-                (get_local $result)
+                
+            (br_if $break (i32.eqz (i32.load8_u (get_local $i))))
+            
+            (set_local $result
+              (i32.add
+                (i32.sub
+                    (i32.shl (get_local $result) (i32.const 5))
+                    (get_local $result)
+                )
+                (i32.load8_u (get_local $i))
+              )
             )
-            (i32.load8_u (get_local $i))
-          )
-        )
-        
-        ;; i++
-        (set_local $i (i32.add (get_local $i) (i32.const 1)))
-        
-        (br $continue)
+            
+            ;; i++
+            (set_local $i (i32.add (get_local $i) (i32.const 1)))
+            
+            (br $continue)
         
         )
       )
       
-      (i32.shl (get_local $result) (i32.const 0))
+      (get_local $result)
     )
 )

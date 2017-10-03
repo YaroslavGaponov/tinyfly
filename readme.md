@@ -35,3 +35,5 @@ curl -XHEAD http://localhost:17878/key1
 curl -XDELETE http://localhost:17878/key1
 ```
 
+### Remark
+I am using WebAssembly techology for speed up some functions. Just for me compiler (https://mbebenita.github.io/WasmExplorer/)
