@@ -192,6 +192,7 @@ class Storage {
         assert(buffer.length > 0);
 
         this._buffer = buffer;
+        this._lastOffset = 0;
     }
     clear() {
         this._buffer.writeUInt8(BLOCK.FREE, 0);
@@ -199,8 +200,18 @@ class Storage {
         return this;
     }
     save(key, value) {
+        let offset = this._save(key, value, this._lastOffset);
+        if (offset === -1) {
+            offset = this._save(key, value, 0);
+        }
+        if (offset !== -1) {
+            this._lastOffset = offset;
+        }
+        return offset;
+    }
+    _save(key, value, startFromOffset) {
         const data = new Buffer(key + '\0' + value);
-        let offset = 0;
+        let offset =  startFromOffset;
         for (;;) {
             assert(offset >= 0);
             assert(offset < this._buffer.length);
@@ -216,7 +227,7 @@ class Storage {
                 if (other_size > 0) {
                     this._buffer.writeUInt8(BLOCK.FREE, offset + 5 + data.length);
                     this._buffer.writeInt32BE(other_size, offset + 5 + data.length + 1);
-                }
+                }                
                 return offset;
             }
             offset += size + 5;
