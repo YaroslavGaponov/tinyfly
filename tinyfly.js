@@ -10,14 +10,11 @@ const DEBUG = true;
 const TOTAL_MEMORY_SIZE = 0xffffff;
 const INDEX_SIZE = 0xffff;
 const CACHE_SIZE = 500;
-const PORT = process.env.PORT || 17878;
 
 const SPACE = Buffer.alloc(TOTAL_MEMORY_SIZE);
 
 const assert = require('assert');
 const net = require('net');
-
-let getHashFunc = null;
 
 class Utils {
     static debuggify(object) {
@@ -145,27 +142,34 @@ class BloomFilter {
 }
 
 class Cache {
-    constructor(size, hfunc) {
+    constructor(size, getHashFunc) {
         this._keys = new Array(size);
         this._values = new Array(size);
-        this._hfunc = hfunc;
+        this._hash = getHashFunc(731);
+    }
+    clear() {
+        for(let i=0; i<this._keys.length; i++) {
+            this._keys[i] = null;
+            this._values[i] = null;
+        }
+        return this;
     }
      has(key) {        
-        const index = this._hfunc(key) % this._keys.length;
+        const index = this._hash(key) % this._keys.length;
         return this._keys[index] === key;
     }
      set(key, value) {
-        const index = this._hfunc(key) % this._keys.length;
+        const index = this._hash(key) % this._keys.length;
         this._keys[index] = key;
         this._values[index] = value;
         return true;
     }
      get(key) {
-        const index = this._hfunc(key) % this._keys.length;
+        const index = this._hash(key) % this._keys.length;
         return this._keys[index] === key ? this._values[index] : null;
     }
      remove(key) {
-        const index = this._hfunc(key) % this._keys.length;
+        const index = this._hash(key) % this._keys.length;
         if (this._keys[index] === key) {
             this._keys[index] = null;
             this._values[index] = null;
@@ -256,14 +260,14 @@ class Storage {
 const EOC = 0xffffffff;
 
 class Index {
-    constructor(buffer) {
+    constructor(buffer, getHashFunc) {
         const length = buffer.length >> 3;
         const nodes_length = (length >> 1) + (length >> 2); // 75%
         const bitmap_length = nodes_length >> 5;
         const bloom_length = length >> 5;
         const htable_length = length - nodes_length - bitmap_length - bloom_length;
         
-
+        this._hash = getHashFunc(199);
         this._bitmap = Utils.debuggify(new BitMap(buffer.slice(0, bitmap_length)));
         this._bloom = Utils.debuggify(new BloomFilter(buffer.slice(bitmap_length, bitmap_length + bloom_length), getHashFunc, [1087, 1697, 2039, 2843, 3041]));
         this._table = new Uint32Array(buffer.slice(bitmap_length + bloom_length, bitmap_length + bloom_length + htable_length));
@@ -286,7 +290,7 @@ class Index {
             return -1;
         }
 
-        const hash = getHashFunc(199)(key);
+        const hash = this._hash(key);
         const index = hash % this._table.length;
 
         let curr_offset = this._table[index];
@@ -323,7 +327,7 @@ class Index {
         assert(id >= 0);
         assert(key);
 
-        const hash = getHashFunc(199)(key);
+        const hash = this._hash(key);
         const index = hash % this._table.length;
 
         let pred_offset = EOC;
@@ -383,7 +387,7 @@ class Index {
             return -1;
         }
 
-        const hash = getHashFunc(199)(key);
+        const hash = this._hash(key);
         const index = hash % this._table.length;
     
         let pred_offset = EOC;
@@ -482,21 +486,6 @@ class NoSql {
 
 }
 
-let nosql = null;
-require('./hash')().then(
-    (fn) => {
-        if (fn) {
-            getHashFunc = fn;
-        }
-        nosql = new NoSql(
-            new Index(SPACE.slice(0, INDEX_SIZE)).clear(),
-            new Storage(SPACE.slice(INDEX_SIZE)).clear(),
-            new Cache(CACHE_SIZE, getHashFunc(731))
-        );        
-    }
-);
-
-
 const PROTOCOL = 'HTTP/1.1';
 const LN = '\r\n';
 
@@ -515,15 +504,20 @@ const HTTP_CODE = Object.freeze({
     501: 'Not Implemented'
 });
 
-const REPLY = (socket) => {
-    return (code, body = '') => {
-        return socket.end(PROTOCOL + ' ' + code + ' ' + HTTP_CODE[code] + LN + LN + body);
-    };
-};
-
-net.createServer(
-    (socket) => {
-        const done = REPLY(socket);
+class RestServer {
+    constructor(nosql, port, host) {
+        this._nosql = nosql;
+        this._port = port || 17878;
+        this._host = host || '0.0.0.0';
+        this._server = net.createServer(this._handler.bind(this));
+    }
+    _reply(socket) {
+        return (code, body = '') => {
+            return socket.end(PROTOCOL + ' ' + code + ' ' + HTTP_CODE[code] + LN + LN + body);
+        };
+    }
+    _handler(socket) {
+        const done = this._reply(socket);
         socket.on('data', (chunk) => {
 
             const [header, body] = chunk.toString().split(LN + LN);
@@ -535,40 +529,40 @@ net.createServer(
 
             switch(method) {
                 case METHOD.HEAD: {
-                    if (nosql.has(key)) {
+                    if (this._nosql.has(key)) {
                         return done(200);
                     } else {
                         return done(404);
                     }
                 }
                 case METHOD.GET: {
-                    if (nosql.has(key)) {                        
-                        return done(200, nosql.get(key));
+                    if (this._nosql.has(key)) {                        
+                        return done(200, this._nosql.get(key));
                     } else {                        
                         return done(404);
                     }
                 }
                 case METHOD.PUT: {
-                    if (nosql.has(key)) {
-                        if (!nosql.delete(key)) {
+                    if (this._nosql.has(key)) {
+                        if (!this._nosql.delete(key)) {
                             return done(500);
                         }
                     }
-                    if (nosql.set(key, body)) {
+                    if (this._nosql.set(key, body)) {
                         return done(200);
                     } else {
                         return done(500);
                     }
                 }
                 case METHOD.POST: {
-                    if (nosql.set(key, body)) {
+                    if (this._nosql.set(key, body)) {
                         return done(200);
                     } else {
                         return done(500);
                     }
                 }
                 case METHOD.DELETE: {
-                    if (nosql.delete(key)) {
+                    if (this._nosql.delete(key)) {
                         return done(200);
                     } else {
                         return done(404);
@@ -579,9 +573,32 @@ net.createServer(
                 }
             }
         });
-    })
-    .listen(PORT, () => {
-        console.log(`tinyfly is opened server on ${PORT}`);
-    })
-;
+    }
+    start() {
+        this._server.listen(this._port, this._host, () => {
+            console.log(`tinyfly is opened server on ${this._host}:${this._port}`);
+        });
+    }
+    stop() {
+        this._server.close();
+    }
+}
 
+Promise.all([
+    require('./hash').load()
+]).then(
+    (modules) => {
+        const F = {
+            getHashFunc: modules[0]
+        };
+        new RestServer(
+            new NoSql(
+                new Index(SPACE.slice(0, INDEX_SIZE), F.getHashFunc).clear(),
+                new Storage(SPACE.slice(INDEX_SIZE)).clear(),
+                new Cache(CACHE_SIZE, F.getHashFunc).clear()
+            ),
+            process.env.PORT
+        )
+        .start();
+    }
+);

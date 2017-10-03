@@ -48,4 +48,6 @@ const hash = 'WebAssembly' in global ?
     }
 ;
 
-module.exports = hash;
+module.exports.load = () => {
+    return hash();
+}
