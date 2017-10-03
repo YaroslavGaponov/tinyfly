@@ -263,6 +263,7 @@ class Storage {
             return false;
         }        
         this._buffer.writeUInt8(BLOCK.FREE, offset);
+        this._lastOffset = offset;
         return true;
     }
 }
