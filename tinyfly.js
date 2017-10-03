@@ -210,7 +210,7 @@ class Storage {
         return offset;
     }
     _save(key, value, startFromOffset) {
-        const data = new Buffer(key + '\0' + value);
+        const data = Buffer.from(key + '\0' + value);
         let offset =  startFromOffset;
         for (;;) {
             assert(offset >= 0);
@@ -416,7 +416,7 @@ class Index {
                 if (pred_offset === EOC) {
                     this._table[index] = curr_next;
                 } else {
-                    let _addr = Index.geNodeBlockOffset(pred_offset);
+                    let _addr = Index.getNodeBlockOffset(pred_offset);
                     this._nodes[_addr + 2] = curr_next;
                 }
                 this._bitmap.free(curr_offset);

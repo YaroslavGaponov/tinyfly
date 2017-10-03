@@ -19,10 +19,11 @@ const hash = 'WebAssembly' in global ?
             .then(instance => {
                  return (seed = 0) => {
                      return (str) => {
-                         const buf = new Uint16Array(instance.exports.memory.buffer);
+                         const buf = new Uint8Array(instance.exports.memory.buffer);
                          for(let i=0; i<str.length ;i++) {
                              buf[i] = str.charCodeAt(i);
-                         }                         
+                         }
+                         buf[str.length] = 0;
                          return instance.exports.hash(seed) >>> 0;
                      };
                  };
