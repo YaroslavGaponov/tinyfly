@@ -5,8 +5,6 @@
 
 'use strict';
 
-const DEBUG = true;
-
 const TOTAL_MEMORY_SIZE = 0xffffff;
 const INDEX_SIZE = 0xffff;
 const CACHE_SIZE = 500;
@@ -15,35 +13,6 @@ const SPACE = Buffer.alloc(TOTAL_MEMORY_SIZE);
 
 const assert = require('assert');
 const net = require('net');
-
-class Utils {
-    static debuggify(object) {
-        if (!DEBUG) {
-            return object;
-        }
-        const wrapper = Object.create(object);
-        for (let name of Object.getOwnPropertyNames(Object.getPrototypeOf(object))) {
-              const method = object[name];
-              if (method instanceof Function && name !== 'constructor' && !name.startsWith('_')) {
-                wrapper[name] = function() {                
-                    const result = method.apply(object, arguments);
-                    console.log(
-                        'DEBUG:',
-                        object.constructor.name + '.' + name,
-                        '(' +
-                            Array.prototype.slice.call(arguments)
-                                .map(p => {return p instanceof Function ? '<function>' : p;})
-                                .map(p => {return p instanceof Buffer ? '<buffer>' : p;})
-                                .toString() +
-                        ') => ', result
-                    );
-                    return result;
-                };
-              }
-        }
-        return wrapper;
-    }
-}
 
 class BitMap {
     constructor(array) {
@@ -280,8 +249,8 @@ class Index {
         const htable_length = length - nodes_length - bitmap_length - bloom_length;
         
         this._hash = getHashFunc(199);
-        this._bitmap = Utils.debuggify(new BitMap(buffer.slice(0, bitmap_length)));
-        this._bloom = Utils.debuggify(new BloomFilter(buffer.slice(bitmap_length, bitmap_length + bloom_length), getHashFunc, [1087, 1697, 2039, 2843, 3041]));
+        this._bitmap = new BitMap(buffer.slice(0, bitmap_length));
+        this._bloom = new BloomFilter(buffer.slice(bitmap_length, bitmap_length + bloom_length), getHashFunc, [1087, 1697, 2039, 2843, 3041]);
         this._table = new Uint32Array(buffer.slice(bitmap_length + bloom_length, bitmap_length + bloom_length + htable_length));
         this._nodes = new Uint32Array(buffer.slice(bitmap_length + bloom_length + htable_length));
     }
@@ -437,11 +406,9 @@ class NoSql {
         assert(index && index instanceof Index);
         assert(storage && storage instanceof Storage);
 
-        this._index = Utils.debuggify(index);
-        this._storage = Utils.debuggify(storage);
-        this._cache = Utils.debuggify(cache);
-    
-        return Utils.debuggify(this);
+        this._index = index;
+        this._storage = storage;
+        this._cache = cache;
     }
     has(key) {
         assert(key);
@@ -613,4 +580,8 @@ Promise.all([
         )
         .start();
     }
-);
+)
+.catch(ex => {
+    console.log(ex);
+    process.exit();
+});
