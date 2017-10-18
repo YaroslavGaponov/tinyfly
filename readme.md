@@ -29,10 +29,10 @@ docker run -p 17878:17878 -d tinyfly
 ## Rest Api
 
 ```output
-curl -XPOST http://localhost:17878/key1 -d 'hello1'
-curl -XGET http://localhost:17878/key1
-curl -XHEAD http://localhost:17878/key1
-curl -XDELETE http://localhost:17878/key1
+curl -XPOST http://localhost:17878/nosql/key1 -d 'hello1'
+curl -XGET http://localhost:17878/nosql/key1
+curl -XHEAD http://localhost:17878/nosql/key1
+curl -XDELETE http://localhost:17878/nosql/key1
 ```
 
 ### Remark

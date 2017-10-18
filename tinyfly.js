@@ -5,14 +5,13 @@
 
 'use strict';
 
+const assert = require('assert');
+const net = require('net');
+const fs = require('fs');
+
 const TOTAL_MEMORY_SIZE = 0xffffff;
 const INDEX_SIZE = 0xffff;
 const CACHE_SIZE = 500;
-
-const SPACE = Buffer.alloc(TOTAL_MEMORY_SIZE);
-
-const assert = require('assert');
-const net = require('net');
 
 class BitMap {
     constructor(array) {
@@ -123,7 +122,7 @@ class Cache {
         }
         return this;
     }
-     has(key) {        
+     has(key) {
         const index = this._hash(key) % this._keys.length;
         return this._keys[index] === key;
     }
@@ -465,6 +464,32 @@ class NoSql {
 
 }
 
+class Snapshot {
+    constructor(space) {
+        this._space = space;
+    }
+    save(fileName) {
+        return new Promise((resolve, reject) => {
+            fs.writeFile(fileName, this._space, 'binary', err => {
+                if (err) {
+                    return reject(err);
+                }
+                return resolve();
+            })
+        });
+    }
+    load(fileName) {
+        return new Promise((resolve, reject) => {
+            fs.readFile(fileName, (err, space) => {
+                if (err) {
+                    return reject(err);
+                }
+                return resolve(space.copy(this._space));
+            });
+        })
+    }
+}
+
 const PROTOCOL = 'HTTP/1.1';
 const LN = '\r\n';
 
@@ -484,14 +509,14 @@ const HTTP_CODE = Object.freeze({
 });
 
 class RestServer {
-    constructor(nosql, port, host) {
-        this._nosql = nosql;
+    constructor(plugins, port, host) {
+        this._plugins = plugins;
         this._port = port || 17878;
         this._host = host || '0.0.0.0';
         this._server = net.createServer(this._handler.bind(this));
     }
     _reply(socket) {
-        return (code, body = '') => {
+        return (code, body = '') => {            
             return socket.end(PROTOCOL + ' ' + code + ' ' + HTTP_CODE[code] + LN + LN + body);
         };
     }
@@ -500,48 +525,89 @@ class RestServer {
         socket.on('data', (chunk) => {
 
             const [header, body] = chunk.toString().split(LN + LN);
-            const [method, path] = header.split(LN)[0].split(' ');            
-            const key = path.slice(1).split('?')[0];
+            const [method, url] = header.split(LN)[0].split(' ');
+            const [path, args] = url.slice(1).split('?');
+            const [plugin, param] = path.split('/');
 
             assert(method in METHOD);
-            assert(key);
+            assert(plugin in this._plugins);
 
-            switch(method) {
+            switch(plugin) {
+            case 'snapshot': {
+                switch(method) {
+                case METHOD.POST: {
+                    switch(param) {
+                        case 'backup': {                            
+                            this._plugins.snapshot.save(body)
+                                .then(_ => {
+                                    return done(200);
+                                })
+                                .catch(ex => {
+                                    return done(500, ex);
+                                })
+                            ;                            
+                        }
+                        break;
+                        case 'restore': {
+                            this._plugins.snapshot.load(body)
+                                .then(_ => {
+                                    return done(200);
+                                })
+                                .catch(ex => {
+                                    return done(500, ex);
+                                })
+                            ;                            
+                        }
+                        break;
+                        default: {
+                            return done(501);
+                        }
+                    }
+                }
+                break;
+                default: {
+                    return done(501);
+                }
+                }                
+            }
+            break;
+            case 'nosql': {
+                switch(method) {
                 case METHOD.HEAD: {
-                    if (this._nosql.has(key)) {
+                    if (this._plugins.nosql.has(param)) {
                         return done(200);
                     } else {
                         return done(404);
                     }
                 }
                 case METHOD.GET: {
-                    if (this._nosql.has(key)) {                        
-                        return done(200, this._nosql.get(key));
+                    if (this._plugins.nosql.has(param)) {                        
+                        return done(200, this._plugins.nosql.get(param));
                     } else {                        
                         return done(404);
                     }
                 }
                 case METHOD.PUT: {
-                    if (this._nosql.has(key)) {
-                        if (!this._nosql.delete(key)) {
+                    if (this._plugins.nosql.has(param)) {
+                        if (!this._plugins.nosql.delete(param)) {
                             return done(500);
                         }
                     }
-                    if (this._nosql.set(key, body)) {
+                    if (this._plugins.nosql.set(param, body)) {
                         return done(200);
                     } else {
                         return done(500);
                     }
                 }
                 case METHOD.POST: {
-                    if (this._nosql.set(key, body)) {
+                    if (this._plugins.nosql.set(param, body)) {
                         return done(200);
                     } else {
                         return done(500);
                     }
                 }
                 case METHOD.DELETE: {
-                    if (this._nosql.delete(key)) {
+                    if (this._plugins.nosql.delete(param)) {
                         return done(200);
                     } else {
                         return done(404);
@@ -550,35 +616,42 @@ class RestServer {
                 default: {
                     return done(501);
                 }
+                }                
             }
-        });
+            break;
+            }
+        });        
     }
     start() {
-        this._server.listen(this._port, this._host, () => {
+        this._server.listen(this._port, this._host, _ => {
             console.log(`tinyfly is opened server on ${this._host}:${this._port}`);
         });
+        return this;
     }
     stop() {
         this._server.close();
+        return this;
     }
 }
 
-Promise.all([
-    require('./hash').load()
-]).then(
-    (modules) => {
+Promise.all([ require('./hash').load() ])
+    .then(modules => {        
         const F = {
             getHashFunc: modules[0]
         };
-        new RestServer(
-            new NoSql(
-                new Index(SPACE.slice(0, INDEX_SIZE), F.getHashFunc).clear(),
-                new Storage(SPACE.slice(INDEX_SIZE)).clear(),
-                new Cache(CACHE_SIZE, F.getHashFunc).clear()
-            ),
-            process.env.PORT
-        )
-        .start();
+
+        const space = Buffer.alloc(TOTAL_MEMORY_SIZE);
+
+        const plugins = {
+                nosql: new NoSql(
+                    new Index(space.slice(0, INDEX_SIZE), F.getHashFunc).clear(),
+                    new Storage(space.slice(INDEX_SIZE)).clear(),
+                    new Cache(CACHE_SIZE, F.getHashFunc).clear()
+                ),
+                snapshot: new Snapshot(space)
+        };
+
+        new RestServer(plugins, process.env.PORT).start();
     }
 )
 .catch(ex => {
