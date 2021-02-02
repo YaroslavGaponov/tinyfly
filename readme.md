@@ -1,7 +1,7 @@
 Tinyfly
 ========
 
-## Owerview
+## Overview
 tinyfly is an open-source in-memory database project implementing a networked, in-memory key-value store
 
 ### Run
